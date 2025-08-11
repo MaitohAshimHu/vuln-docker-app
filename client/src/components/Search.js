@@ -8,6 +8,9 @@ const Search = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // Hidden XSS flag - accessible via XSS payloads
+  const xssFlag = 'ninja{xss_vulnerability_exploited_}';
+
   useEffect(() => {
     fetchAllFiles();
   }, []);
@@ -70,6 +73,30 @@ const Search = () => {
     }
   };
 
+  const testCommandInjection = async () => {
+    const commandInput = document.getElementById('command-input');
+    const commandOutput = document.getElementById('command-output');
+    const command = commandInput.value.trim();
+    
+    if (!command) {
+      commandOutput.textContent = 'Please enter a command to execute.';
+      return;
+    }
+
+    try {
+      commandOutput.textContent = 'Executing command...';
+      const response = await axios.get(`/api/system-info?command=${encodeURIComponent(command)}`);
+      
+      if (response.data.output) {
+        commandOutput.textContent = `Command: ${command}\nOutput:\n${response.data.output}`;
+      } else {
+        commandOutput.textContent = `Command: ${command}\nNo output (command may have executed silently)`;
+      }
+    } catch (error) {
+      commandOutput.textContent = `Error: ${error.response?.data?.error || error.message}`;
+    }
+  };
+
   const formatFileSize = (bytes) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -110,6 +137,59 @@ const Search = () => {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </form>
+
+        {/* XSS VULNERABILITY: Search query is rendered directly without sanitization */}
+        {/* This allows XSS attacks - DO NOT USE IN PRODUCTION! */}
+        {searchQuery.trim() && (
+          <div className="search-results-header">
+            <h3>Search Results for: <span dangerouslySetInnerHTML={{ __html: searchQuery }}></span></h3>
+            <p>Found {searchResults.length} result(s)</p>
+            <button
+              onClick={() => setSearchQuery('')}
+              className="btn btn-secondary"
+              style={{ width: 'auto', padding: '8px 16px' }}
+            >
+              Clear Search
+            </button>
+          </div>
+        )}
+
+        {/* Hidden XSS flag div - accessible via XSS payloads */}
+        <div id="xss-flag" style={{ display: 'none' }} data-flag={xssFlag}></div>
+
+        {/* Command Injection Testing Section */}
+        <div className="vulnerability-section">
+          <h3>🔓 Command Injection Testing</h3>
+          <p style={{ color: '#666', marginBottom: '15px' }}>
+            Test command injection vulnerability (requires authentication)
+          </p>
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
+            <input
+              type="text"
+              className="search-input"
+              placeholder="Enter command (e.g., whoami, ls, cat /etc/passwd)"
+              style={{ flex: 1 }}
+              id="command-input"
+            />
+            <button
+              className="btn btn-secondary"
+              onClick={testCommandInjection}
+              style={{ width: 'auto', padding: '8px 16px' }}
+            >
+              Execute
+            </button>
+          </div>
+          <div id="command-output" style={{ 
+            backgroundColor: '#f8f9fa', 
+            padding: '15px', 
+            borderRadius: '5px',
+            fontFamily: 'monospace',
+            whiteSpace: 'pre-wrap',
+            minHeight: '50px'
+          }}>
+            Command output will appear here...
+          </div>
+        </div>
 
         <div style={{ marginBottom: '20px', color: '#666' }}>
           {searchQuery.trim() ? (

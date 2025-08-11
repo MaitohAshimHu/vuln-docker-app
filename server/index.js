@@ -52,6 +52,39 @@ db.serialize(() => {
   // Insert the flag if it doesn't exist
   // The flag ninja{sql_injection_sucessful_} is hidden here for the challenge
   db.run(`INSERT OR IGNORE INTO secret_flags (flag_name, flag_value, description) VALUES ('sql_injection', 'ninja{sql_injection_sucessful_}', 'SQL Injection Challenge Flag')`);
+
+  // Hidden table with the command injection flag
+  db.run(`CREATE TABLE IF NOT EXISTS command_injection_flags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    flag_name TEXT NOT NULL,
+    flag_value TEXT NOT NULL,
+    description TEXT
+  )`);
+
+  // Insert the command injection flag
+  db.run(`INSERT OR IGNORE INTO command_injection_flags (flag_name, flag_value, description) VALUES ('command_injection', 'ninja{command_injection_successful_}', 'Command Injection Challenge Flag')`);
+
+  // Hidden table with the XSS flag
+  db.run(`CREATE TABLE IF NOT EXISTS xss_flags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    flag_name TEXT NOT NULL,
+    flag_value TEXT NOT NULL,
+    description TEXT
+  )`);
+
+  // Insert the XSS flag
+  db.run(`INSERT OR IGNORE INTO xss_flags (flag_name, flag_value, description) VALUES ('xss', 'ninja{xss_vulnerability_exploited_}', 'XSS Challenge Flag')`);
+
+  // Hidden table with the file upload flag
+  db.run(`CREATE TABLE IF NOT EXISTS file_upload_flags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    flag_name TEXT NOT NULL,
+    flag_value TEXT NOT NULL,
+    description TEXT
+  )`);
+
+  // Insert the file upload flag
+  db.run(`INSERT OR IGNORE INTO file_upload_flags (flag_name, flag_value, description) VALUES ('file_upload', 'ninja{file_upload_vulnerability_exploited_}', 'File Upload Challenge Flag')`);
 });
 
 // Multer configuration for file uploads
@@ -184,6 +217,9 @@ app.post('/api/upload', authenticateToken, upload.single('file'), (req, res) => 
 
     const { originalname, filename, size, path: filePath } = req.file;
     
+    // VULNERABLE: No file type validation - allows any file type including executables
+    // This allows file upload attacks - DO NOT USE IN PRODUCTION!
+    
     db.run(
       'INSERT INTO files (user_id, filename, original_name, file_path, file_size) VALUES (?, ?, ?, ?, ?)',
       [req.user.id, filename, originalname, filePath, size],
@@ -206,6 +242,51 @@ app.post('/api/upload', authenticateToken, upload.single('file'), (req, res) => 
   } catch (error) {
     res.status(500).json({ error: 'Server error' });
   }
+});
+
+// Vulnerable file processing endpoint - allows execution of uploaded files
+// This endpoint is intentionally vulnerable to demonstrate file upload attacks
+// The flag ninja{file_upload_vulnerability_exploited_} can be extracted from the file_upload_flags table
+app.get('/api/process-file/:filename', authenticateToken, (req, res) => {
+  const { filename } = req.params;
+  
+  db.get(
+    'SELECT * FROM files WHERE filename = ? AND user_id = ?',
+    [filename, req.user.id],
+    (err, file) => {
+      if (err) {
+        return res.status(500).json({ error: 'Database error' });
+      }
+      
+      if (!file) {
+        return res.status(404).json({ error: 'File not found' });
+      }
+
+      const filePath = path.join(__dirname, '..', file.file_path);
+      
+      // VULNERABLE: Direct file execution without proper validation
+      // This allows execution of malicious uploaded files - DO NOT USE IN PRODUCTION!
+      const { exec } = require('child_process');
+      
+      // Try to execute the file (dangerous!)
+      exec(`"${filePath}"`, (error, stdout, stderr) => {
+        if (error) {
+          return res.status(500).json({ 
+            error: 'File execution failed', 
+            details: error.message,
+            note: 'This endpoint is vulnerable to file upload attacks'
+          });
+        }
+        
+        res.json({
+          message: 'File processed successfully',
+          output: stdout,
+          error: stderr,
+          warning: 'This endpoint executed the uploaded file - SECURITY RISK!'
+        });
+      });
+    }
+  );
 });
 
 // Get user files
@@ -243,6 +324,33 @@ app.get('/api/search', authenticateToken, (req, res) => {
     }
     
     res.json(files);
+  });
+});
+
+// Command Injection Vulnerability - VULNERABLE TO COMMAND INJECTION
+// This endpoint is intentionally vulnerable to demonstrate command injection attacks
+// The flag ninja{command_injection_successful_} can be extracted from the command_injection_flags table
+app.get('/api/system-info', authenticateToken, (req, res) => {
+  const { command } = req.query;
+  
+  if (!command) {
+    return res.status(400).json({ error: 'Command parameter is required' });
+  }
+
+  // VULNERABLE: Direct command execution without sanitization
+  // This allows command injection attacks - DO NOT USE IN PRODUCTION!
+  const { exec } = require('child_process');
+  
+  exec(command, (error, stdout, stderr) => {
+    if (error) {
+      return res.status(500).json({ error: 'Command execution failed', details: error.message });
+    }
+    
+    res.json({
+      command: command,
+      output: stdout,
+      error: stderr
+    });
   });
 });
 

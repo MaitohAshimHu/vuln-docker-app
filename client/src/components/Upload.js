@@ -150,6 +150,42 @@ const Upload = () => {
           <p><strong>Maximum file size:</strong> 10MB per file</p>
           <p><strong>Multiple files:</strong> Yes, you can upload multiple files at once</p>
         </div>
+
+        {/* File Upload Vulnerability Testing Section */}
+        <div className="vulnerability-section" style={{ marginTop: '30px', padding: '20px', backgroundColor: '#fff3cd', borderRadius: '5px', border: '1px solid #ffeaa7' }}>
+          <h3>⚠️ File Upload Vulnerability Testing</h3>
+          <p style={{ color: '#856404', marginBottom: '15px' }}>
+            <strong>Warning:</strong> This application is vulnerable to file upload attacks. 
+            You can upload and execute malicious files including executables, scripts, and other dangerous file types.
+          </p>
+          
+          <div style={{ marginBottom: '15px' }}>
+            <h4>Test Files to Upload:</h4>
+            <ul style={{ textAlign: 'left', marginLeft: '20px' }}>
+              <li><strong>Executable files:</strong> .exe, .bat, .sh, .py files</li>
+              <li><strong>Script files:</strong> .js, .php, .rb files</li>
+              <li><strong>Shell scripts:</strong> .sh, .bash, .zsh files</li>
+              <li><strong>Any file type:</strong> No restrictions enforced</li>
+            </ul>
+          </div>
+
+          <div style={{ marginBottom: '15px' }}>
+            <h4>How to Exploit:</h4>
+            <ol style={{ textAlign: 'left', marginLeft: '20px' }}>
+              <li>Upload a malicious file (e.g., a shell script with the flag)</li>
+              <li>Use the <code>/api/process-file/:filename</code> endpoint to execute it</li>
+              <li>Extract the flag: <code>ninja{file_upload_vulnerability_exploited_}</code></li>
+            </ol>
+          </div>
+
+          <div style={{ backgroundColor: '#f8f9fa', padding: '15px', borderRadius: '5px', fontFamily: 'monospace' }}>
+            <strong>Example malicious file content:</strong><br/>
+            <code>#!/bin/bash<br/>
+            echo "ninja{file_upload_vulnerability_exploited_}"<br/>
+            whoami<br/>
+            pwd</code>
+          </div>
+        </div>
       </div>
     </div>
   );

