@@ -1,0 +1,292 @@
+const express = require('express');
+const cors = require('cors');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const multer = require('multer');
+const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
+const fs = require('fs');
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+const JWT_SECRET = 'your-secret-key-change-in-production';
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.static('uploads'));
+
+// Database setup
+const db = new sqlite3.Database('users.db');
+
+// Create tables
+db.serialize(() => {
+  db.run(`CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    filename TEXT NOT NULL,
+    original_name TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    file_size INTEGER NOT NULL,
+    upload_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users (id)
+  )`);
+});
+
+// Multer configuration for file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadDir = 'uploads';
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir);
+    }
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ 
+  storage: storage,
+  limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
+});
+
+// Authentication middleware
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ error: 'Access token required' });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(403).json({ error: 'Invalid token' });
+    }
+    req.user = user;
+    next();
+  });
+};
+
+// Routes
+
+// Register
+app.post('/api/register', async (req, res) => {
+  try {
+    const { username, email, password } = req.body;
+    
+    if (!username || !email || !password) {
+      return res.status(400).json({ error: 'All fields are required' });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    
+    db.run(
+      'INSERT INTO users (username, email, password) VALUES (?, ?, ?)',
+      [username, email, hashedPassword],
+      function(err) {
+        if (err) {
+          if (err.message.includes('UNIQUE constraint failed')) {
+            return res.status(400).json({ error: 'Username or email already exists' });
+          }
+          return res.status(500).json({ error: 'Database error' });
+        }
+        
+        const token = jwt.sign({ id: this.lastID, username }, JWT_SECRET);
+        res.json({ 
+          message: 'User registered successfully',
+          token,
+          user: { id: this.lastID, username, email }
+        });
+      }
+    );
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Login
+app.post('/api/login', (req, res) => {
+  const { username, password } = req.body;
+  
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password are required' });
+  }
+
+  db.get('SELECT * FROM users WHERE username = ?', [username], async (err, user) => {
+    if (err) {
+      return res.status(500).json({ error: 'Database error' });
+    }
+    
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET);
+    res.json({
+      message: 'Login successful',
+      token,
+      user: { id: user.id, username: user.username, email: user.email }
+    });
+  });
+});
+
+// Get user profile
+app.get('/api/profile', authenticateToken, (req, res) => {
+  db.get('SELECT id, username, email, created_at FROM users WHERE id = ?', [req.user.id], (err, user) => {
+    if (err) {
+      return res.status(500).json({ error: 'Database error' });
+    }
+    
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json(user);
+  });
+});
+
+// Upload file
+app.post('/api/upload', authenticateToken, upload.single('file'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const { originalname, filename, size, path: filePath } = req.file;
+    
+    db.run(
+      'INSERT INTO files (user_id, filename, original_name, file_path, file_size) VALUES (?, ?, ?, ?, ?)',
+      [req.user.id, filename, originalname, filePath, size],
+      function(err) {
+        if (err) {
+          return res.status(500).json({ error: 'Database error' });
+        }
+        
+        res.json({
+          message: 'File uploaded successfully',
+          file: {
+            id: this.lastID,
+            filename,
+            original_name: originalname,
+            file_size: size
+          }
+        });
+      }
+    );
+  } catch (error) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get user files
+app.get('/api/files', authenticateToken, (req, res) => {
+  db.all(
+    'SELECT id, filename, original_name, file_size, upload_date FROM files WHERE user_id = ? ORDER BY upload_date DESC',
+    [req.user.id],
+    (err, files) => {
+      if (err) {
+        return res.status(500).json({ error: 'Database error' });
+      }
+      
+      res.json(files);
+    }
+  );
+});
+
+// Search files
+app.get('/api/search', authenticateToken, (req, res) => {
+  const { query } = req.query;
+  
+  if (!query) {
+    return res.status(400).json({ error: 'Search query is required' });
+  }
+
+  db.all(
+    'SELECT id, filename, original_name, file_size, upload_date FROM files WHERE user_id = ? AND (original_name LIKE ? OR filename LIKE ?) ORDER BY upload_date DESC',
+    [req.user.id, `%${query}%`, `%${query}%`],
+    (err, files) => {
+      if (err) {
+        return res.status(500).json({ error: 'Database error' });
+      }
+      
+      res.json(files);
+    }
+  );
+});
+
+// Download file
+app.get('/api/download/:filename', authenticateToken, (req, res) => {
+  const { filename } = req.params;
+  
+  db.get(
+    'SELECT * FROM files WHERE filename = ? AND user_id = ?',
+    [filename, req.user.id],
+    (err, file) => {
+      if (err) {
+        return res.status(500).json({ error: 'Database error' });
+      }
+      
+      if (!file) {
+        return res.status(404).json({ error: 'File not found' });
+      }
+
+      const filePath = path.join(__dirname, '..', file.file_path);
+      res.download(filePath, file.original_name);
+    }
+  );
+});
+
+// Delete file
+app.delete('/api/files/:id', authenticateToken, (req, res) => {
+  const { id } = req.params;
+  
+  db.get(
+    'SELECT * FROM files WHERE id = ? AND user_id = ?',
+    [id, req.user.id],
+    (err, file) => {
+      if (err) {
+        return res.status(500).json({ error: 'Database error' });
+      }
+      
+      if (!file) {
+        return res.status(404).json({ error: 'File not found' });
+      }
+
+      // Delete file from filesystem
+      const filePath = path.join(__dirname, '..', file.file_path);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+
+      // Delete from database
+      db.run('DELETE FROM files WHERE id = ?', [id], (err) => {
+        if (err) {
+          return res.status(500).json({ error: 'Database error' });
+        }
+        
+        res.json({ message: 'File deleted successfully' });
+      });
+    }
+  );
+});
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
