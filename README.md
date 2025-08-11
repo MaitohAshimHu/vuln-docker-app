@@ -170,6 +170,66 @@ If you prefer to set up manually:
 - **Input Validation**: Server-side validation for all inputs
 - **CORS Protection**: Configured for secure cross-origin requests
 
+## ⚠️ Security Challenge: SQL Injection Vulnerability
+
+This application contains an **intentional SQL injection vulnerability** for educational purposes. The flag `ninja{sql_injection_sucessful_}` is hidden in a secret table that can be accessed through SQL injection.
+
+### How to Find the Vulnerability
+
+1. **Start the application** and create a user account
+2. **Login** to the application
+3. **Navigate to the Search page** (`/search`)
+4. **Use SQL injection payloads** in the search field to exploit the vulnerability
+
+### SQL Injection Payloads to Try
+
+#### Basic Union-based injection:
+```
+' UNION SELECT 1,2,3,4,5 FROM secret_flags --
+```
+
+#### Extract the flag:
+```
+' UNION SELECT 1,flag_name,flag_value,description,5 FROM secret_flags --
+```
+
+#### Alternative payloads:
+```
+' UNION SELECT 1,2,3,4,5 FROM sqlite_master WHERE type='table' --
+' UNION SELECT 1,2,3,4,5 FROM secret_flags --
+```
+
+### What Happens
+
+The search functionality uses direct string concatenation instead of parameterized queries, making it vulnerable to SQL injection. When you inject SQL code, it gets executed directly in the database query, allowing you to:
+
+- Access the hidden `secret_flags` table
+- Extract the flag `ninja{sql_injection_sucessful_}`
+- Potentially access other database tables
+
+### Learning Objectives
+
+- Understand how SQL injection vulnerabilities occur
+- Learn to identify vulnerable code patterns
+- Practice SQL injection techniques in a safe environment
+- Recognize the importance of using parameterized queries
+
+**Note**: This vulnerability is intentionally placed for educational purposes. In real applications, always use parameterized queries to prevent SQL injection attacks.
+
+### Testing the Vulnerability
+
+A test script `test_sql_injection.js` is included to demonstrate the vulnerability:
+
+```bash
+# Install axios if not already installed
+npm install axios
+
+# Run the test script (update username/password first)
+node test_sql_injection.js
+```
+
+The script will automatically test various SQL injection payloads and extract the flag.
+
 ## File Storage
 
 - Files are stored in the `uploads/` directory

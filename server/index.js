@@ -39,6 +39,19 @@ db.serialize(() => {
     upload_date DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users (id)
   )`);
+
+  // Hidden table with the flag - accessible via SQL injection
+  // This table contains the challenge flag that can be extracted through SQL injection
+  db.run(`CREATE TABLE IF NOT EXISTS secret_flags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    flag_name TEXT NOT NULL,
+    flag_value TEXT NOT NULL,
+    description TEXT
+  )`);
+
+  // Insert the flag if it doesn't exist
+  // The flag ninja{sql_injection_sucessful_} is hidden here for the challenge
+  db.run(`INSERT OR IGNORE INTO secret_flags (flag_name, flag_value, description) VALUES ('sql_injection', 'ninja{sql_injection_sucessful_}', 'SQL Injection Challenge Flag')`);
 });
 
 // Multer configuration for file uploads
@@ -210,7 +223,9 @@ app.get('/api/files', authenticateToken, (req, res) => {
   );
 });
 
-// Search files
+// Search files - VULNERABLE TO SQL INJECTION
+// This endpoint is intentionally vulnerable to demonstrate SQL injection attacks
+// The flag ninja{sql_injection_sucessful_} can be extracted from the secret_flags table
 app.get('/api/search', authenticateToken, (req, res) => {
   const { query } = req.query;
   
@@ -218,17 +233,17 @@ app.get('/api/search', authenticateToken, (req, res) => {
     return res.status(400).json({ error: 'Search query is required' });
   }
 
-  db.all(
-    'SELECT id, filename, original_name, file_size, upload_date FROM files WHERE user_id = ? AND (original_name LIKE ? OR filename LIKE ?) ORDER BY upload_date DESC',
-    [req.user.id, `%${query}%`, `%${query}%`],
-    (err, files) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
-      
-      res.json(files);
+  // VULNERABLE: Direct string concatenation instead of parameterized query
+  // This allows SQL injection attacks - DO NOT USE IN PRODUCTION!
+  const sqlQuery = `SELECT id, filename, original_name, file_size, upload_date FROM files WHERE user_id = ${req.user.id} AND (original_name LIKE '%${query}%' OR filename LIKE '%${query}%') ORDER BY upload_date DESC`;
+  
+  db.all(sqlQuery, (err, files) => {
+    if (err) {
+      return res.status(500).json({ error: 'Database error' });
     }
-  );
+    
+    res.json(files);
+  });
 });
 
 // Download file
