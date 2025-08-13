@@ -7,6 +7,9 @@ const Upload = () => {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const fileInputRef = useRef(null);
+  
+  // File upload vulnerability flag
+  const fileUploadFlag = 'ninja{file_upload_vulnerability_exploited_}';
 
   const handleDrag = (e) => {
     e.preventDefault();
@@ -174,14 +177,14 @@ const Upload = () => {
             <ol style={{ textAlign: 'left', marginLeft: '20px' }}>
               <li>Upload a malicious file (e.g., a shell script with the flag)</li>
               <li>Use the <code>/api/process-file/:filename</code> endpoint to execute it</li>
-              <li>Extract the flag: <code>ninja{file_upload_vulnerability_exploited_}</code></li>
+              <li>Extract the flag: <code>{fileUploadFlag}</code></li>
             </ol>
           </div>
 
           <div style={{ backgroundColor: '#f8f9fa', padding: '15px', borderRadius: '5px', fontFamily: 'monospace' }}>
             <strong>Example malicious file content:</strong><br/>
             <code>#!/bin/bash<br/>
-            echo "ninja{file_upload_vulnerability_exploited_}"<br/>
+            echo "{fileUploadFlag}"<br/>
             whoami<br/>
             pwd</code>
           </div>

